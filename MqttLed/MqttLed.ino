@@ -1,15 +1,16 @@
 /*
- Basic ESP8266 MQTT example
+ ESP8266 MQTT lighting node
+ Based on the Basic ESP8266 MQTT example
 
- This sketch demonstrates the capabilities of the pubsub library in combination
- with the ESP8266 board/library.
-
- It connects to an MQTT server then:
-  - publishes "hello world" to the topic "outTopic" every two seconds
-  - subscribes to the topic "inTopic", printing out any messages
-    it receives. NB - it assumes the received payloads are strings not binary
-  - If the first character of the topic "inTopic" is an 1, switch ON the ESP Led,
-    else switch it off
+ 1) Configure MQTT_SERVER, MQTT_USERNAME and MQTT_PASSWORD in isis.c
+ 2) If applicable, change PLACEID and MQTT_DEVICE
+ 
+ The node will connect to MQTT_SERVER, subscribes to the topic "button"
+ and listens for the payload sent. If the payload equals the Integer
+ defined in PLACEID, it will turn on/off a chain of 10 WS2801 LEDs
+ connected to the RX pin (#3). If the received payload is another
+ PLACEID and the LEDs were previously on, it will change the LED colour
+ to red for 500 ms and switch them off afterwards.
 
  It will reconnect to the server if the connection is lost using a blocking
  reconnect function. See the 'mqtt_reconnect_nonblocking' example for how to
@@ -29,11 +30,12 @@
 #include <NeoPixelBus.h>
 #include "isis.c"
 
-#define COLOR_SATURATION 255
-#define PLACEID '1'
-#define MQTT_DEVICE "ESP8266Led2"
+#define COLOR_SATURATION 255      // 255 sets full LED brightness for one channel
+#define PLACEID '1'               // Defines the payload for which to react
+#define MQTT_DEVICE "ESP8266Led1" // Change this for every device!
 
-
+// WifiManager allows us to easily connect the node to any WiFi network without
+// hardcoding any credentials into the code
 WiFiManager wifiManager;
 
 WiFiClient espClient;
@@ -50,8 +52,8 @@ RgbColor blue(0, 0, COLOR_SATURATION);
 RgbColor white(COLOR_SATURATION);
 RgbColor black(0);
 
-const uint16_t PixelCount = 10; // this example assumes 4 pixels, making it smaller will cause a failure
-const uint8_t PixelPin = 3;  // make sure to set this to the correct pin, ignored for Esp8266
+const uint16_t PixelCount = 10; // this example assumes 10 pixels
+const uint8_t PixelPin = 3;     // make sure to set this to the correct pin, ignored for Esp8266
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 
 void setup_wifi() {
@@ -73,16 +75,18 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println();
 
 
-  // Switch on the LED if an 1 was received as first character
+  // Switch on the LED if the payload equals the PLACEID
   if (((char)payload[0]) == PLACEID) {
-    digitalWrite(BUILTIN_LED, LOW);   // Turn the LEDs on
+    // if LEDs were previously off, turn them on. Otherwise,
+    // turn them off
     if (!switchStatus) { fadein(); }
     else { fadeout(); }
-    Serial.println("PLACEID ist angekommen, mache Dinge");
+    Serial.println("Received PLACEID, working.");
   } else {
-    digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+    // Another node was triggered. If this node was previously
+    // illuminated, turn it off.
     if (switchStatus) { fadeout(); }
-    Serial.println("Irgendwas anderes kam an");
+    Serial.println("Some other node was triggered.");
   }
 
 }
@@ -110,7 +114,7 @@ void reconnect() {
 
 
 void fadeout() {
-
+    // Set all colours to red for 500ms, then turn them off
     strip.SetPixelColor(0, red);
     strip.SetPixelColor(1, red);
     strip.SetPixelColor(2, red);
@@ -154,7 +158,6 @@ void fadein()  {
   }
 
 void setup() {
-  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
   Serial.begin(115200);
 
   strip.Begin();
